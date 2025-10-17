@@ -1,0 +1,6 @@
+RewriteEngine On
+
+# Перенаправление всех запросов (кроме статических файлов) на FCGI
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /fcgi-bin/$1 [L]
