@@ -1,9 +1,47 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <title>Test Page</title>
+    <meta charset="UTF-8">
+    <title>Проверка попадания в область</title>
+    <style>
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; }
+        input, select { width: 100%; padding: 8px; }
+        button { padding: 10px 20px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        .coordinate-system { margin: 20px 0; text-align: center; }
+    </style>
 </head>
 <body>
-    <h1>Hello from Apache + FCGI</h1>
+    <div class="container">
+        <h1>Проверка попадания точки в область</h1>
+        
+        <div class="coordinate-system">
+            <img src="area.png" alt="Coordinate System" style="max-width: 400px;">
+            <p><strong>Область:</strong> 1-я четверть (прямоугольник), 4-я четверть (треугольник), 3-я четверть (1/4 окружности)</p>
+        </div>
+
+<form action="/check/" method="GET">
+    <div class="form-group">
+        <label for="x">Координата X (-5 до 5):</label>
+        <input type="text" id="x" name="x" required placeholder="Например: 1.5">
+    </div>
+    
+    <div class="form-group">
+        <label for="y">Координата Y (-5 до 5):</label>
+        <input type="text" id="y" name="y" required placeholder="Например: -2.3">
+    </div>
+    
+    <div class="form-group">
+        <label for="r">Параметр R (> 0):</label>
+        <input type="text" id="r" name="r" required placeholder="Например: 3">
+    </div>
+    
+    <button type="submit">Проверить попадание</button>
+</form>
+        
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
 </body>
 </html>
