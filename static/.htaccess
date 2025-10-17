@@ -1,6 +1,9 @@
 RewriteEngine On
 
-# Перенаправление всех запросов (кроме статических файлов) на FCGI
+# FastCGI для Java обработки
+AddHandler fastcgi-script .fcgi
+
+# Маршрутизация запросов к Java FastCGI
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ /fcgi-bin/$1 [L]
+RewriteRule ^(check|api/.*)$ your-app.fcgi [QSA,L]

@@ -22,24 +22,21 @@ public class App {
             
             try {
                 // Получаем параметры из FastCGI environment
-                String queryString = System.getProperty("QUERY_STRING", "");
                 String requestMethod = System.getProperty("REQUEST_METHOD", "GET");
                 String scriptName = System.getProperty("SCRIPT_NAME", "");
                 String acceptHeader = System.getProperty("HTTP_ACCEPT", "");
+                String contentType = System.getProperty("CONTENT_TYPE", "");
                 
-                System.err.println("FastCGI Request #" + count + ": " + requestMethod + " " + scriptName + "?" + queryString);
+                System.err.println("FastCGI Request #" + count + ": " + requestMethod + " " + scriptName);
+                System.err.println("Content-Type: " + contentType);
                 
-                Map<String, String> params = new HashMap<>();
-                
-                // Парсим параметры из QUERY_STRING
-                if (!queryString.isEmpty()) {
-                    parseQueryString(queryString, params);
-                    System.err.println("Parsed parameters: " + params);
-                }
+                Map<String, String> params = getRequestParameters(requestMethod, contentType);
+                System.err.println("Parsed parameters: " + params);
                 
                 // Определяем тип ответа (JSON или HTML)
                 boolean wantsJson = acceptHeader.contains("application/json") || 
-                                   scriptName.contains("/api/");
+                                   scriptName.contains("/api/") ||
+                                   scriptName.contains("/check");
                 
                 // Обрабатываем запрос
                 String response = processRequest(params, startTime, wantsJson);
@@ -66,29 +63,81 @@ public class App {
         }
     }
     
+    private static Map<String, String> getRequestParameters(String requestMethod, String contentType) throws IOException {
+        Map<String, String> params = new HashMap<>();
+        
+        if ("GET".equals(requestMethod)) {
+            String queryString = System.getProperty("QUERY_STRING", "");
+            System.err.println("GET Query String: " + queryString);
+            parseQueryString(queryString, params);
+        } else if ("POST".equals(requestMethod)) {
+            // Чтение POST данных из stdin
+            String contentLengthStr = System.getProperty("CONTENT_LENGTH", "0");
+            int contentLength = Integer.parseInt(contentLengthStr);
+            
+            System.err.println("POST Content-Length: " + contentLength);
+            System.err.println("POST Content-Type: " + contentType);
+            
+            if (contentLength > 0) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+                char[] body = new char[contentLength];
+                int bytesRead = reader.read(body, 0, contentLength);
+                String postData = new String(body, 0, bytesRead);
+                
+                System.err.println("Raw POST data: " + postData);
+                
+                if (contentType != null && contentType.contains("application/x-www-form-urlencoded")) {
+                    parseQueryString(postData, params);
+                } else {
+                    // Пробуем распарсить в любом случае
+                    parseQueryString(postData, params);
+                }
+            } else {
+                System.err.println("No POST data received");
+            }
+        }
+        
+        return params;
+    }
+    
     private static void parseQueryString(String query, Map<String, String> params) {
+        if (query == null || query.isEmpty()) {
+            System.err.println("Query string is empty");
+            return;
+        }
+        
+        System.err.println("Parsing query: " + query);
+        
         String[] pairs = query.split("&");
         for (String pair : pairs) {
             String[] keyValue = pair.split("=");
-            if (keyValue.length == 2) {
+            if (keyValue.length >= 1) {
+                String key = keyValue[0];
+                String value = keyValue.length > 1 ? keyValue[1] : "";
                 try {
-                    params.put(keyValue[0], java.net.URLDecoder.decode(keyValue[1], "UTF-8"));
+                    String decodedValue = java.net.URLDecoder.decode(value, "UTF-8");
+                    params.put(key, decodedValue);
+                    System.err.println("Added param: " + key + " = " + decodedValue);
                 } catch (UnsupportedEncodingException e) {
-                    params.put(keyValue[0], keyValue[1]);
+                    params.put(key, value);
+                    System.err.println("Added param (no decode): " + key + " = " + value);
                 }
             }
         }
     }
     
+    // Остальные методы остаются без изменений...
     private static String processRequest(Map<String, String> params, long startTime, boolean wantsJson) {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         String currentTime = sdf.format(new Date());
         
-        // Если нет параметров, возвращаем HTML форму
-        if (params.isEmpty() && !wantsJson) {
-            return getHtmlForm();
-        } else if (params.isEmpty() && wantsJson) {
-            return "{\"error\": true, \"message\": \"No parameters provided\"}";
+        // Если нет параметров, возвращаем ошибку
+        if (params.isEmpty()) {
+            if (wantsJson) {
+                return "{\"error\": true, \"message\": \"No parameters provided. Received: \"}";
+            } else {
+                return createErrorResponse("No parameters provided", currentTime, startTime);
+            }
         }
         
         // Валидация параметров
@@ -126,7 +175,7 @@ public class App {
     
     private static ValidationResult validateParameters(Map<String, String> params) {
         if (!params.containsKey("x") || !params.containsKey("y") || !params.containsKey("r")) {
-            return new ValidationResult(false, "Missing required parameters: x, y, r");
+            return new ValidationResult(false, "Missing required parameters: x, y, r. Received: " + params.keySet());
         }
         
         try {
@@ -150,145 +199,35 @@ public class App {
     }
     
     private static boolean checkHit(double x, double y, double r) {
-    // 1-ая четверть: мимо (x >= 0, y >= 0)
-    if (x >= 0 && y >= 0) {
+        // 1-ая четверть: мимо (x >= 0, y >= 0)
+        if (x >= 0 && y >= 0) {
+            return false;
+        }
+        
+        // 2-ая четверть: по x от -R до 0, по y от 0 до R/2 (x < 0, y >= 0)
+        if (x < 0 && y >= 0) {
+            return (x >= -r) && (y <= r/2);
+        }
+        
+        // 3-я четверть: сектор круга радиусом R (x < 0, y < 0)
+        if (x < 0 && y < 0) {
+            return (x*x + y*y) <= r*r;
+        }
+        
+        // 4-ая четверть: треугольник с катетами R (x >= 0, y < 0)
+        if (x >= 0 && y < 0) {
+            return (x <= r) && (y >= -r) && (x - y <= r);
+        }
+        
         return false;
     }
     
-    // 2-ая четверть: по x от -R до 0, по y от 0 до R/2 (x < 0, y >= 0)
-    if (x < 0 && y >= 0) {
-        return (x >= -r) && (y <= r/2);
-    }
-    
-    // 3-я четверть: сектор круга радиусом R (x < 0, y < 0)
-    if (x < 0 && y < 0) {
-        return (x*x + y*y) <= r*r;
-    }
-    
-    // 4-ая четверть: треугольник с катетами R (x >= 0, y < 0)
-    if (x >= 0 && y < 0) {
-        return (x <= r) && (y >= -r) && (x - y <= r);
-    }
-    
-    return false;
-    }
-    
     private static String getHtmlForm() {
-        // Упрощенная HTML форма для статического обслуживания
         return "<!DOCTYPE html>\n" +
-               "<html lang='ru'>\n" +
-               "<head>\n" +
-               "    <meta charset='UTF-8'>\n" +
-               "    <title>Проверка попадания в область</title>\n" +
-               "    <style>\n" +
-               "        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }\n" +
-               "        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }\n" +
-               "        .form-group { margin-bottom: 15px; }\n" +
-               "        label { display: block; margin-bottom: 5px; font-weight: bold; }\n" +
-               "        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }\n" +
-               "        button { padding: 12px 30px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }\n" +
-               "        button:hover { background-color: #0056b3; }\n" +
-               "        #result { margin-top: 20px; }\n" +
-               "        table { width: 100%; border-collapse: collapse; margin-top: 20px; }\n" +
-               "        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }\n" +
-               "        th { background-color: #f8f9fa; }\n" +
-               "        .hit { background-color: #d4edda; }\n" +
-               "        .miss { background-color: #f8d7da; }\n" +
-               "    </style>\n" +
-               "</head>\n" +
-               "<body>\n" +
-               "    <div class='container'>\n" +
-               "        <h1>Проверка попадания точки в область</h1>\n" +
-               "        \n" +
-               "        <div class='coordinate-system'>\n" +
-               "            <h3>Описание области:</h3>\n" +
-               "            <p><strong>1-я четверть:</strong> прямоугольник (0 ≤ x ≤ R/2, 0 ≤ y ≤ R)</p>\n" +
-               "            <p><strong>4-я четверть:</strong> треугольник (0 ≤ x ≤ R/2, -R ≤ y ≤ 0, x - y ≤ R/2)</p>\n" +
-               "            <p><strong>3-я четверть:</strong> ¼ окружности (x² + y² ≤ (R/2)², x ≤ 0, y ≤ 0)</p>\n" +
-               "        </div>\n" +
-               "\n" +
-               "        <form id='checkForm'>\n" +
-               "            <div class='form-group'>\n" +
-               "                <label for='x'>Координата X (-5 до 5):</label>\n" +
-               "                <input type='text' id='x' name='x' required placeholder='Например: 1.5'>\n" +
-               "            </div>\n" +
-               "            \n" +
-               "            <div class='form-group'>\n" +
-               "                <label for='y'>Координата Y (-5 до 5):</label>\n" +
-               "                <input type='text' id='y' name='y' required placeholder='Например: -2.3'>\n" +
-               "            </div>\n" +
-               "            \n" +
-               "            <div class='form-group'>\n" +
-               "                <label for='r'>Параметр R (> 0):</label>\n" +
-               "                <input type='text' id='r' name='r' required placeholder='Например: 3'>\n" +
-               "            </div>\n" +
-               "            \n" +
-               "            <button type='submit'>Проверить попадание</button>\n" +
-               "        </form>\n" +
-               "        \n" +
-               "        <div id='result'></div>\n" +
-               "    </div>\n" +
-               "    \n" +
-               "    <script>\n" +
-               "        document.getElementById('checkForm').addEventListener('submit', function(e) {\n" +
-               "            e.preventDefault();\n" +
-               "            \n" +
-               "            const formData = new FormData(this);\n" +
-               "            const params = new URLSearchParams(formData);\n" +
-               "            \n" +
-               "            // AJAX запрос к FastCGI API\n" +
-               "            fetch('/api/check?' + params.toString(), {\n" +
-               "                headers: {\n" +
-               "                    'Accept': 'application/json'\n" +
-               "                }\n" +
-               "            })\n" +
-               "            .then(response => response.json())\n" +
-               "            .then(data => {\n" +
-               "                displayResults(data);\n" +
-               "            })\n" +
-               "            .catch(error => {\n" +
-               "                console.error('Error:', error);\n" +
-               "                document.getElementById('result').innerHTML = '<div style=\"color: red;\">Ошибка: ' + error + '</div>';\n" +
-               "            });\n" +
-               "        });\n" +
-               "        \n" +
-               "        function displayResults(data) {\n" +
-               "            if (data.error) {\n" +
-               "                document.getElementById('result').innerHTML = '<div style=\"color: red;\">Ошибка: ' + data.message + '</div>';\n" +
-               "                return;\n" +
-               "            }\n" +
-               "            \n" +
-               "            let html = '<div class=\"info\">' +\n" +
-               "                '<p><strong>Текущее время:</strong> ' + data.currentTime + '</p>' +\n" +
-               "                '<p><strong>Время работы скрипта:</strong> ' + data.scriptTime + ' мс</p>' +\n" +
-               "                '<p><strong>Текущий результат:</strong> Точка (' + data.currentResult.x + ', ' + data.currentResult.y + ') при R=' + data.currentResult.r + \n" +
-               "                ' - <strong>' + (data.currentResult.hit ? 'ПОПАДАНИЕ' : 'ПРОМАХ') + '</strong></p>' +\n" +
-               "                '</div>';\n" +
-               "            \n" +
-               "            if (data.history && data.history.length > 0) {\n" +
-               "                html += '<h2>История запросов</h2>' +\n" +
-               "                    '<table>' +\n" +
-               "                    '<tr><th>X</th><th>Y</th><th>R</th><th>Результат</th><th>Время запроса</th></tr>';\n" +
-               "                \n" +
-               "                data.history.forEach(result => {\n" +
-               "                    const rowClass = result.hit ? 'hit' : 'miss';\n" +
-               "                    html += '<tr class=\"' + rowClass + '\">' +\n" +
-               "                        '<td>' + result.x + '</td>' +\n" +
-               "                        '<td>' + result.y + '</td>' +\n" +
-               "                        '<td>' + result.r + '</td>' +\n" +
-               "                        '<td><strong>' + (result.hit ? 'ПОПАДАНИЕ' : 'ПРОМАХ') + '</strong></td>' +\n" +
-               "                        '<td>' + result.timestamp + '</td>' +\n" +
-               "                        '</tr>';\n" +
-               "                });\n" +
-               "                \n" +
-               "                html += '</table>';\n" +
-               "            }\n" +
-               "            \n" +
-               "            document.getElementById('result').innerHTML = html;\n" +
-               "        }\n" +
-               "    </script>\n" +
-               "</body>\n" +
-               "</html>";
+               "<html><body>\n" +
+               "<h1>Area Check Server</h1>\n" +
+               "<p>Use the main HTML page for the form interface.</p>\n" +
+               "</body></html>";
     }
     
     private static String createJsonResponse(String currentTime, long startTime, RequestResult currentResult) {
@@ -296,6 +235,7 @@ public class App {
         
         StringBuilder json = new StringBuilder();
         json.append("{\n")
+            .append("  \"error\": false,\n")
             .append("  \"currentTime\": \"").append(currentTime).append("\",\n")
             .append("  \"scriptTime\": ").append(scriptTime).append(",\n")
             .append("  \"currentResult\": {\n")
@@ -338,16 +278,31 @@ public class App {
     }
     
     private static String createSuccessResponse(String currentTime, long startTime, RequestResult currentResult) {
-        // Старая HTML версия для обратной совместимости
         long scriptTime = System.currentTimeMillis() - startTime;
         
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html>\n")
-            .append("<html><body>\n")
+            .append("<html><head><title>Результат</title></head><body>\n")
             .append("<h1>Результаты проверки</h1>\n")
             .append("<p><strong>Текущее время:</strong> ").append(currentTime).append("</p>\n")
             .append("<p><strong>Время работы скрипта:</strong> ").append(scriptTime).append(" мс</p>\n")
             .append("<p><strong>Результат:</strong> ").append(currentResult.hit ? "ПОПАДАНИЕ" : "ПРОМАХ").append("</p>\n")
+            .append("<h2>История запросов</h2>\n")
+            .append("<table border='1'>\n")
+            .append("<tr><th>X</th><th>Y</th><th>R</th><th>Результат</th><th>Время</th></tr>\n");
+        
+        for (int i = history.size() - 1; i >= 0; i--) {
+            RequestResult result = history.get(i);
+            html.append("<tr>")
+                .append("<td>").append(result.x).append("</td>")
+                .append("<td>").append(result.y).append("</td>")
+                .append("<td>").append(result.r).append("</td>")
+                .append("<td>").append(result.hit ? "ПОПАДАНИЕ" : "ПРОМАХ").append("</td>")
+                .append("<td>").append(result.timestamp).append("</td>")
+                .append("</tr>\n");
+        }
+        
+        html.append("</table>\n")
             .append("</body></html>");
         
         return html.toString();
@@ -388,9 +343,5 @@ public class App {
             this.isValid = isValid;
             this.message = message;
         }
-    }
-    
-    public String getGreeting() {
-        return "FastCGI Area Check Server with AJAX";
     }
 }

@@ -1,11 +1,11 @@
-/* Базовые стили и сброс */
+/* Базовые стили и сброс - демонстрация наследования */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
-/* Наследование и каскадирование */
+/* Наследование - все дочерние элементы body наследуют эти свойства */
 body {
     font-family: Arial, sans-serif;
     background-color: #f5f5f5;
@@ -13,9 +13,25 @@ body {
     line-height: 1.6;
 }
 
-/* Шапка с явным заданием шрифта */
+/* Каскадирование - более специфичные правила переопределяют общие */
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+}
+
+.container h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+/* Шапка с явным заданием шрифта - селектор класса */
 .header {
-    font-family: "Arial", sans-serif !important;
+    font-family: "Arial", "Helvetica", sans-serif !important;
     font-size: 18px;
     color: #2c3e50;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -25,23 +41,23 @@ body {
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
-.header h1 {
+/* Селектор дочернего элемента */
+.header > h1 {
     font-size: 24px;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
     color: white;
+    font-weight: bold;
 }
 
-.header-info {
+/* Селектор идентификатора */
+#header-info {
     font-size: 16px;
     color: #ecf0f1;
+    font-style: italic;
 }
 
-/* Контейнер */
-.container {
-    max-width: 900px;
-    margin: 0 auto;
-    background: white;
-    padding: 30px;
-    border-radius: 8px;
-    box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+/* Псевдокласс для hover эффекта */
+.header:hover {
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    transition: box-shadow 0.3s ease;
 }
