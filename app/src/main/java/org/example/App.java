@@ -13,7 +13,6 @@ public class App {
         int count = 0;
         FCGIInterface fcgi = new FCGIInterface();
         
-        // ВАЖНО: Все отладочные сообщения в stderr
         System.err.println("FastCGI Area Check Server started");
         
         // FastCGI main loop
@@ -26,8 +25,8 @@ public class App {
                 String queryString = System.getProperty("QUERY_STRING", "");
                 String requestMethod = System.getProperty("REQUEST_METHOD", "GET");
                 String scriptName = System.getProperty("SCRIPT_NAME", "");
+                String acceptHeader = System.getProperty("HTTP_ACCEPT", "");
                 
-                // ВАЖНО: Отладочные сообщения в stderr
                 System.err.println("FastCGI Request #" + count + ": " + requestMethod + " " + scriptName + "?" + queryString);
                 
                 Map<String, String> params = new HashMap<>();
@@ -38,23 +37,31 @@ public class App {
                     System.err.println("Parsed parameters: " + params);
                 }
                 
-                // Обрабатываем запрос
-                String response = processRequest(params, startTime);
+                // Определяем тип ответа (JSON или HTML)
+                boolean wantsJson = acceptHeader.contains("application/json") || 
+                                   scriptName.contains("/api/");
                 
-                // ВАЖНО: Только HTTP ответ в stdout
-                System.out.println("Content-type: text/html; charset=utf-8");
-                System.out.println(); // Пустая строка - разделитель заголовков и тела
+                // Обрабатываем запрос
+                String response = processRequest(params, startTime, wantsJson);
+                
+                // Отправляем ответ
+                if (wantsJson) {
+                    System.out.println("Content-type: application/json; charset=utf-8");
+                } else {
+                    System.out.println("Content-type: text/html; charset=utf-8");
+                }
+                System.out.println(); // Пустая строка - разделитель
                 System.out.print(response);
                 
             } catch (Exception e) {
-                // ВАЖНО: Ошибки в stderr
                 System.err.println("Error processing request: " + e.getMessage());
                 e.printStackTrace();
                 
-                // HTTP ошибка в stdout
-                System.out.println("Content-type: text/html; charset=utf-8");
-                System.out.println(); // Пустая строка
-                System.out.println("<html><body><h1>Server Error</h1><p>" + e.getMessage() + "</p></body></html>");
+                // Отправляем ошибку в JSON формате
+                System.out.println("Content-type: application/json; charset=utf-8");
+                System.out.println();
+                String errorJson = "{\"error\": true, \"message\": \"" + e.getMessage().replace("\"", "\\\"") + "\"}";
+                System.out.print(errorJson);
             }
         }
     }
@@ -73,19 +80,25 @@ public class App {
         }
     }
     
-    private static String processRequest(Map<String, String> params, long startTime) {
+    private static String processRequest(Map<String, String> params, long startTime, boolean wantsJson) {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         String currentTime = sdf.format(new Date());
         
         // Если нет параметров, возвращаем HTML форму
-        if (params.isEmpty()) {
+        if (params.isEmpty() && !wantsJson) {
             return getHtmlForm();
+        } else if (params.isEmpty() && wantsJson) {
+            return "{\"error\": true, \"message\": \"No parameters provided\"}";
         }
         
         // Валидация параметров
         ValidationResult validation = validateParameters(params);
         if (!validation.isValid) {
-            return createErrorResponse(validation.message, currentTime, startTime);
+            if (wantsJson) {
+                return createJsonErrorResponse(validation.message, currentTime, startTime);
+            } else {
+                return createErrorResponse(validation.message, currentTime, startTime);
+            }
         }
         
         double x = Double.parseDouble(params.get("x"));
@@ -104,7 +117,11 @@ public class App {
             history.remove(0);
         }
         
-        return createSuccessResponse(currentTime, startTime, result);
+        if (wantsJson) {
+            return createJsonResponse(currentTime, startTime, result);
+        } else {
+            return createSuccessResponse(currentTime, startTime, result);
+        }
     }
     
     private static ValidationResult validateParameters(Map<String, String> params) {
@@ -133,25 +150,31 @@ public class App {
     }
     
     private static boolean checkHit(double x, double y, double r) {
-        // Проверка попадания в 1-ю четверть (прямоугольник)
-        if (x >= 0 && y >= 0 && x <= r/2 && y <= r) {
-            return true;
-        }
-        
-        // Проверка попадания в 4-ю четверть (треугольник)
-        if (x >= 0 && y <= 0 && x <= r/2 && y >= -r && (x + Math.abs(y)) <= r/2) {
-            return true;
-        }
-        
-        // Проверка попадания в 3-ю четверть (окружность 1/4)
-        if (x <= 0 && y <= 0 && (x*x + y*y) <= (r/2)*(r/2)) {
-            return true;
-        }
-        
+    // 1-ая четверть: мимо (x >= 0, y >= 0)
+    if (x >= 0 && y >= 0) {
         return false;
     }
     
+    // 2-ая четверть: по x от -R до 0, по y от 0 до R/2 (x < 0, y >= 0)
+    if (x < 0 && y >= 0) {
+        return (x >= -r) && (y <= r/2);
+    }
+    
+    // 3-я четверть: сектор круга радиусом R (x < 0, y < 0)
+    if (x < 0 && y < 0) {
+        return (x*x + y*y) <= r*r;
+    }
+    
+    // 4-ая четверть: треугольник с катетами R (x >= 0, y < 0)
+    if (x >= 0 && y < 0) {
+        return (x <= r) && (y >= -r) && (x - y <= r);
+    }
+    
+    return false;
+    }
+    
     private static String getHtmlForm() {
+        // Упрощенная HTML форма для статического обслуживания
         return "<!DOCTYPE html>\n" +
                "<html lang='ru'>\n" +
                "<head>\n" +
@@ -160,21 +183,17 @@ public class App {
                "    <style>\n" +
                "        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }\n" +
                "        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }\n" +
-               "        h1 { color: #333; text-align: center; }\n" +
                "        .form-group { margin-bottom: 15px; }\n" +
-               "        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }\n" +
-               "        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; }\n" +
-               "        button { padding: 12px 30px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }\n" +
+               "        label { display: block; margin-bottom: 5px; font-weight: bold; }\n" +
+               "        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }\n" +
+               "        button { padding: 12px 30px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }\n" +
                "        button:hover { background-color: #0056b3; }\n" +
-               "        .coordinate-system { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 4px; border-left: 4px solid #007bff; }\n" +
+               "        #result { margin-top: 20px; }\n" +
                "        table { width: 100%; border-collapse: collapse; margin-top: 20px; }\n" +
                "        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }\n" +
-               "        th { background-color: #f8f9fa; font-weight: bold; }\n" +
+               "        th { background-color: #f8f9fa; }\n" +
                "        .hit { background-color: #d4edda; }\n" +
                "        .miss { background-color: #f8d7da; }\n" +
-               "        .info { background: #e7f3ff; padding: 15px; border-radius: 4px; margin: 15px 0; }\n" +
-               "        .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 4px; }\n" +
-               "        .back-link:hover { background: #545b62; }\n" +
                "    </style>\n" +
                "</head>\n" +
                "<body>\n" +
@@ -188,7 +207,7 @@ public class App {
                "            <p><strong>3-я четверть:</strong> ¼ окружности (x² + y² ≤ (R/2)², x ≤ 0, y ≤ 0)</p>\n" +
                "        </div>\n" +
                "\n" +
-               "        <form action='' method='GET'>\n" +
+               "        <form id='checkForm'>\n" +
                "            <div class='form-group'>\n" +
                "                <label for='x'>Координата X (-5 до 5):</label>\n" +
                "                <input type='text' id='x' name='x' required placeholder='Например: 1.5'>\n" +
@@ -206,80 +225,130 @@ public class App {
                "            \n" +
                "            <button type='submit'>Проверить попадание</button>\n" +
                "        </form>\n" +
+               "        \n" +
+               "        <div id='result'></div>\n" +
                "    </div>\n" +
+               "    \n" +
+               "    <script>\n" +
+               "        document.getElementById('checkForm').addEventListener('submit', function(e) {\n" +
+               "            e.preventDefault();\n" +
+               "            \n" +
+               "            const formData = new FormData(this);\n" +
+               "            const params = new URLSearchParams(formData);\n" +
+               "            \n" +
+               "            // AJAX запрос к FastCGI API\n" +
+               "            fetch('/api/check?' + params.toString(), {\n" +
+               "                headers: {\n" +
+               "                    'Accept': 'application/json'\n" +
+               "                }\n" +
+               "            })\n" +
+               "            .then(response => response.json())\n" +
+               "            .then(data => {\n" +
+               "                displayResults(data);\n" +
+               "            })\n" +
+               "            .catch(error => {\n" +
+               "                console.error('Error:', error);\n" +
+               "                document.getElementById('result').innerHTML = '<div style=\"color: red;\">Ошибка: ' + error + '</div>';\n" +
+               "            });\n" +
+               "        });\n" +
+               "        \n" +
+               "        function displayResults(data) {\n" +
+               "            if (data.error) {\n" +
+               "                document.getElementById('result').innerHTML = '<div style=\"color: red;\">Ошибка: ' + data.message + '</div>';\n" +
+               "                return;\n" +
+               "            }\n" +
+               "            \n" +
+               "            let html = '<div class=\"info\">' +\n" +
+               "                '<p><strong>Текущее время:</strong> ' + data.currentTime + '</p>' +\n" +
+               "                '<p><strong>Время работы скрипта:</strong> ' + data.scriptTime + ' мс</p>' +\n" +
+               "                '<p><strong>Текущий результат:</strong> Точка (' + data.currentResult.x + ', ' + data.currentResult.y + ') при R=' + data.currentResult.r + \n" +
+               "                ' - <strong>' + (data.currentResult.hit ? 'ПОПАДАНИЕ' : 'ПРОМАХ') + '</strong></p>' +\n" +
+               "                '</div>';\n" +
+               "            \n" +
+               "            if (data.history && data.history.length > 0) {\n" +
+               "                html += '<h2>История запросов</h2>' +\n" +
+               "                    '<table>' +\n" +
+               "                    '<tr><th>X</th><th>Y</th><th>R</th><th>Результат</th><th>Время запроса</th></tr>';\n" +
+               "                \n" +
+               "                data.history.forEach(result => {\n" +
+               "                    const rowClass = result.hit ? 'hit' : 'miss';\n" +
+               "                    html += '<tr class=\"' + rowClass + '\">' +\n" +
+               "                        '<td>' + result.x + '</td>' +\n" +
+               "                        '<td>' + result.y + '</td>' +\n" +
+               "                        '<td>' + result.r + '</td>' +\n" +
+               "                        '<td><strong>' + (result.hit ? 'ПОПАДАНИЕ' : 'ПРОМАХ') + '</strong></td>' +\n" +
+               "                        '<td>' + result.timestamp + '</td>' +\n" +
+               "                        '</tr>';\n" +
+               "                });\n" +
+               "                \n" +
+               "                html += '</table>';\n" +
+               "            }\n" +
+               "            \n" +
+               "            document.getElementById('result').innerHTML = html;\n" +
+               "        }\n" +
+               "    </script>\n" +
                "</body>\n" +
                "</html>";
     }
     
+    private static String createJsonResponse(String currentTime, long startTime, RequestResult currentResult) {
+        long scriptTime = System.currentTimeMillis() - startTime;
+        
+        StringBuilder json = new StringBuilder();
+        json.append("{\n")
+            .append("  \"currentTime\": \"").append(currentTime).append("\",\n")
+            .append("  \"scriptTime\": ").append(scriptTime).append(",\n")
+            .append("  \"currentResult\": {\n")
+            .append("    \"x\": ").append(currentResult.x).append(",\n")
+            .append("    \"y\": ").append(currentResult.y).append(",\n")
+            .append("    \"r\": ").append(currentResult.r).append(",\n")
+            .append("    \"hit\": ").append(currentResult.hit).append(",\n")
+            .append("    \"timestamp\": \"").append(currentResult.timestamp).append("\"\n")
+            .append("  },\n")
+            .append("  \"history\": [\n");
+        
+        for (int i = history.size() - 1; i >= 0; i--) {
+            RequestResult result = history.get(i);
+            json.append("    {\n")
+                .append("      \"x\": ").append(result.x).append(",\n")
+                .append("      \"y\": ").append(result.y).append(",\n")
+                .append("      \"r\": ").append(result.r).append(",\n")
+                .append("      \"hit\": ").append(result.hit).append(",\n")
+                .append("      \"timestamp\": \"").append(result.timestamp).append("\"\n")
+                .append("    }");
+            if (i > 0) json.append(",");
+            json.append("\n");
+        }
+        
+        json.append("  ]\n")
+            .append("}");
+        
+        return json.toString();
+    }
+    
+    private static String createJsonErrorResponse(String message, String currentTime, long startTime) {
+        long scriptTime = System.currentTimeMillis() - startTime;
+        
+        return "{\n" +
+               "  \"error\": true,\n" +
+               "  \"message\": \"" + message.replace("\"", "\\\"") + "\",\n" +
+               "  \"currentTime\": \"" + currentTime + "\",\n" +
+               "  \"scriptTime\": " + scriptTime + "\n" +
+               "}";
+    }
+    
     private static String createSuccessResponse(String currentTime, long startTime, RequestResult currentResult) {
+        // Старая HTML версия для обратной совместимости
         long scriptTime = System.currentTimeMillis() - startTime;
         
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html>\n")
-            .append("<html lang='ru'>\n")
-            .append("<head>\n")
-            .append("    <meta charset='UTF-8'>\n")
-            .append("    <title>Результаты проверки</title>\n")
-            .append("    <style>\n")
-            .append("        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }\n")
-            .append("        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }\n")
-            .append("        h1 { color: #333; text-align: center; }\n")
-            .append("        .info { background: #e7f3ff; padding: 15px; border-radius: 4px; margin: 15px 0; }\n")
-            .append("        table { width: 100%; border-collapse: collapse; margin-top: 20px; }\n")
-            .append("        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }\n")
-            .append("        th { background-color: #f8f9fa; font-weight: bold; }\n")
-            .append("        .hit { background-color: #d4edda; }\n")
-            .append("        .miss { background-color: #f8d7da; }\n")
-            .append("        .current-result { background: #fff3cd; font-weight: bold; }\n")
-            .append("        .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; }\n")
-            .append("        .back-link:hover { background: #0056b3; }\n")
-            .append("    </style>\n")
-            .append("</head>\n")
-            .append("<body>\n")
-            .append("    <div class='container'>\n")
-            .append("        <h1>Результаты проверки попадания в область</h1>\n")
-            .append("        \n")
-            .append("        <div class='info'>\n")
-            .append("            <p><strong>Текущее время:</strong> ").append(currentTime).append("</p>\n")
-            .append("            <p><strong>Время работы скрипта:</strong> ").append(scriptTime).append(" мс</p>\n")
-            .append("            <p><strong>Текущий результат:</strong> Точка (").append(currentResult.x)
-            .append(", ").append(currentResult.y).append(") при R=").append(currentResult.r)
-            .append(" - <strong>").append(currentResult.hit ? "ПОПАДАНИЕ" : "ПРОМАХ").append("</strong></p>\n")
-            .append("        </div>\n")
-            .append("        \n")
-            .append("        <h2>История запросов</h2>\n")
-            .append("        <table>\n")
-            .append("            <tr>\n")
-            .append("                <th>X</th>\n")
-            .append("                <th>Y</th>\n")
-            .append("                <th>R</th>\n")
-            .append("                <th>Результат</th>\n")
-            .append("                <th>Время запроса</th>\n")
-            .append("            </tr>\n");
-        
-        for (int i = history.size() - 1; i >= 0; i--) {
-            RequestResult result = history.get(i);
-            boolean isCurrent = (result == currentResult);
-            String rowClass = result.hit ? "hit" : "miss";
-            if (isCurrent) {
-                rowClass += " current-result";
-            }
-            
-            html.append("            <tr class='").append(rowClass).append("'>\n")
-                .append("                <td>").append(result.x).append("</td>\n")
-                .append("                <td>").append(result.y).append("</td>\n")
-                .append("                <td>").append(result.r).append("</td>\n")
-                .append("                <td><strong>").append(result.hit ? "ПОПАДАНИЕ" : "ПРОМАХ").append("</strong></td>\n")
-                .append("                <td>").append(result.timestamp).append("</td>\n")
-                .append("            </tr>\n");
-        }
-        
-        html.append("        </table>\n")
-            .append("        \n")
-            .append("        <a href='' class='back-link'>Новая проверка</a>\n")
-            .append("    </div>\n")
-            .append("</body>\n")
-            .append("</html>");
+            .append("<html><body>\n")
+            .append("<h1>Результаты проверки</h1>\n")
+            .append("<p><strong>Текущее время:</strong> ").append(currentTime).append("</p>\n")
+            .append("<p><strong>Время работы скрипта:</strong> ").append(scriptTime).append(" мс</p>\n")
+            .append("<p><strong>Результат:</strong> ").append(currentResult.hit ? "ПОПАДАНИЕ" : "ПРОМАХ").append("</p>\n")
+            .append("</body></html>");
         
         return html.toString();
     }
@@ -288,30 +357,12 @@ public class App {
         long scriptTime = System.currentTimeMillis() - startTime;
         
         return "<!DOCTYPE html>\n" +
-               "<html lang='ru'>\n" +
-               "<head>\n" +
-               "    <meta charset='UTF-8'>\n" +
-               "    <title>Ошибка</title>\n" +
-               "    <style>\n" +
-               "        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }\n" +
-               "        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }\n" +
-               "        h1 { color: #dc3545; }\n" +
-               "        .error { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 4px; margin: 15px 0; }\n" +
-               "        .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; }\n" +
-               "    </style>\n" +
-               "</head>\n" +
-               "<body>\n" +
-               "    <div class='container'>\n" +
-               "        <h1>Ошибка</h1>\n" +
-               "        <div class='error'>\n" +
-               "            <p>" + message + "</p>\n" +
-               "        </div>\n" +
-               "        <p><strong>Текущее время:</strong> " + currentTime + "</p>\n" +
-               "        <p><strong>Время работы скрипта:</strong> " + scriptTime + " мс</p>\n" +
-               "        <a href='' class='back-link'>Вернуться к форме</a>\n" +
-               "    </div>\n" +
-               "</body>\n" +
-               "</html>";
+               "<html><body>\n" +
+               "<h1>Ошибка</h1>\n" +
+               "<p>" + message + "</p>\n" +
+               "<p><strong>Текущее время:</strong> " + currentTime + "</p>\n" +
+               "<p><strong>Время работы скрипта:</strong> " + scriptTime + " мс</p>\n" +
+               "</body></html>";
     }
     
     // Вспомогательные классы
@@ -339,8 +390,7 @@ public class App {
         }
     }
     
-    // Метод для совместимости с тестами
     public String getGreeting() {
-        return "FastCGI Area Check Server";
+        return "FastCGI Area Check Server with AJAX";
     }
 }
