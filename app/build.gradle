@@ -17,15 +17,15 @@ repositories {
 
 dependencies {
     // Use JUnit Jupiter for testing.
-    testImplementation libs.junit.jupiter
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
 
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // This dependency is used by the application.
-    implementation libs.guava
+    implementation 'com.google.guava:guava:32.1.3-jre'
 
-    // ПЕРЕНЕСИТЕ ЗАВИСИМОСТЬ СЮДА и исправьте путь
-    implementation files('libs/fastcgi-lib.jar')
+    // FastCGI библиотека
+    implementation files('fastcgi-lib.jar')
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
@@ -37,7 +37,6 @@ java {
 
 application {
     // Define the main class for the application.
-    // ИСПРАВЬТЕ главный класс или оставьте как есть, если он правильный
     mainClass = 'org.example.App'
 }
 
@@ -50,10 +49,10 @@ tasks.named('test') {
 jar {
     manifest {
         attributes(
-                'Main-Class': 'org.example.App' // Убедитесь, что этот класс существует
+                'Main-Class': 'org.example.App'
         )
     }
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE // Добавьте эту строку
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
