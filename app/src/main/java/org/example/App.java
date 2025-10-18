@@ -13,8 +13,6 @@ public class App {
         int count = 0;
         FCGIInterface fcgi = new FCGIInterface();
         
-        System.err.println("FastCGI Area Check Server started");
-        
         // FastCGI main loop
         while (fcgi.FCGIaccept() >= 0) {
             count++;
@@ -27,11 +25,7 @@ public class App {
                 String acceptHeader = System.getProperty("HTTP_ACCEPT", "");
                 String contentType = System.getProperty("CONTENT_TYPE", "");
                 
-                System.err.println("FastCGI Request #" + count + ": " + requestMethod + " " + scriptName);
-                System.err.println("Content-Type: " + contentType);
-                
                 Map<String, String> params = getRequestParameters(requestMethod, contentType);
-                System.err.println("Parsed parameters: " + params);
                 
                 // Определяем тип ответа (JSON или HTML)
                 boolean wantsJson = acceptHeader.contains("application/json") || 
@@ -47,13 +41,10 @@ public class App {
                 } else {
                     System.out.println("Content-type: text/html; charset=utf-8");
                 }
-                System.out.println(); // Пустая строка - разделитель
+                System.out.println();
                 System.out.print(response);
                 
             } catch (Exception e) {
-                System.err.println("Error processing request: " + e.getMessage());
-                e.printStackTrace();
-                
                 // Отправляем ошибку в JSON формате
                 System.out.println("Content-type: application/json; charset=utf-8");
                 System.out.println();
@@ -68,32 +59,17 @@ public class App {
         
         if ("GET".equals(requestMethod)) {
             String queryString = System.getProperty("QUERY_STRING", "");
-            System.err.println("GET Query String: " + queryString);
             parseQueryString(queryString, params);
         } else if ("POST".equals(requestMethod)) {
-            // Чтение POST данных из stdin
             String contentLengthStr = System.getProperty("CONTENT_LENGTH", "0");
             int contentLength = Integer.parseInt(contentLengthStr);
-            
-            System.err.println("POST Content-Length: " + contentLength);
-            System.err.println("POST Content-Type: " + contentType);
             
             if (contentLength > 0) {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
                 char[] body = new char[contentLength];
                 int bytesRead = reader.read(body, 0, contentLength);
                 String postData = new String(body, 0, bytesRead);
-                
-                System.err.println("Raw POST data: " + postData);
-                
-                if (contentType != null && contentType.contains("application/x-www-form-urlencoded")) {
-                    parseQueryString(postData, params);
-                } else {
-                    // Пробуем распарсить в любом случае
-                    parseQueryString(postData, params);
-                }
-            } else {
-                System.err.println("No POST data received");
+                parseQueryString(postData, params);
             }
         }
         
@@ -102,11 +78,8 @@ public class App {
     
     private static void parseQueryString(String query, Map<String, String> params) {
         if (query == null || query.isEmpty()) {
-            System.err.println("Query string is empty");
             return;
         }
-        
-        System.err.println("Parsing query: " + query);
         
         String[] pairs = query.split("&");
         for (String pair : pairs) {
@@ -117,30 +90,25 @@ public class App {
                 try {
                     String decodedValue = java.net.URLDecoder.decode(value, "UTF-8");
                     params.put(key, decodedValue);
-                    System.err.println("Added param: " + key + " = " + decodedValue);
                 } catch (UnsupportedEncodingException e) {
                     params.put(key, value);
-                    System.err.println("Added param (no decode): " + key + " = " + value);
                 }
             }
         }
     }
     
-    // Остальные методы остаются без изменений...
     private static String processRequest(Map<String, String> params, long startTime, boolean wantsJson) {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         String currentTime = sdf.format(new Date());
         
-        // Если нет параметров, возвращаем ошибку
         if (params.isEmpty()) {
             if (wantsJson) {
-                return "{\"error\": true, \"message\": \"No parameters provided. Received: \"}";
+                return "{\"error\": true, \"message\": \"No parameters provided\"}";
             } else {
                 return createErrorResponse("No parameters provided", currentTime, startTime);
             }
         }
         
-        // Валидация параметров
         ValidationResult validation = validateParameters(params);
         if (!validation.isValid) {
             if (wantsJson) {
@@ -154,14 +122,11 @@ public class App {
         double y = Double.parseDouble(params.get("y"));
         double r = Double.parseDouble(params.get("r"));
         
-        // Проверка попадания в область
         boolean hit = checkHit(x, y, r);
         
-        // Сохранение результата
         RequestResult result = new RequestResult(x, y, r, hit, currentTime);
         history.add(result);
         
-        // Ограничение истории (последние 20 запросов)
         if (history.size() > 20) {
             history.remove(0);
         }
@@ -175,7 +140,7 @@ public class App {
     
     private static ValidationResult validateParameters(Map<String, String> params) {
         if (!params.containsKey("x") || !params.containsKey("y") || !params.containsKey("r")) {
-            return new ValidationResult(false, "Missing required parameters: x, y, r. Received: " + params.keySet());
+            return new ValidationResult(false, "Missing required parameters: x, y, r");
         }
         
         try {
@@ -199,35 +164,23 @@ public class App {
     }
     
     private static boolean checkHit(double x, double y, double r) {
-        // 1-ая четверть: мимо (x >= 0, y >= 0)
         if (x >= 0 && y >= 0) {
             return false;
         }
         
-        // 2-ая четверть: по x от -R до 0, по y от 0 до R/2 (x < 0, y >= 0)
         if (x < 0 && y >= 0) {
             return (x >= -r) && (y <= r/2);
         }
         
-        // 3-я четверть: сектор круга радиусом R (x < 0, y < 0)
         if (x < 0 && y < 0) {
             return (x*x + y*y) <= r*r;
         }
         
-        // 4-ая четверть: треугольник с катетами R (x >= 0, y < 0)
         if (x >= 0 && y < 0) {
             return (x <= r) && (y >= -r) && (x - y <= r);
         }
         
         return false;
-    }
-    
-    private static String getHtmlForm() {
-        return "<!DOCTYPE html>\n" +
-               "<html><body>\n" +
-               "<h1>Area Check Server</h1>\n" +
-               "<p>Use the main HTML page for the form interface.</p>\n" +
-               "</body></html>";
     }
     
     private static String createJsonResponse(String currentTime, long startTime, RequestResult currentResult) {
@@ -320,7 +273,6 @@ public class App {
                "</body></html>";
     }
     
-    // Вспомогательные классы
     static class RequestResult {
         double x, y, r;
         boolean hit;
