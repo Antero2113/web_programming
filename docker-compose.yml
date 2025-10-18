@@ -1,13 +1,14 @@
 services:
-  # Наше приложение
   fcgi:
     build:
       context: .
       dockerfile: Dockerfile
     networks:
-      backend:
+      - backend
+    # Явно указываем порт для доступа из Apache
+    expose:
+      - "1337"
 
-  # Сам веб-сервер
   httpd:
     image: "httpd:2.4.62"
     ports:
@@ -16,7 +17,10 @@ services:
       - "./httpd.conf:/usr/local/apache2/conf/httpd.conf"
       - "./static:/var/www"
     networks:
-      backend:
+      - backend
+    depends_on:
+      - fcgi
 
 networks:
   backend:
+    driver: bridge
