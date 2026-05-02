@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:h="http://xmlns.jcp.org/jsf/html"
+      xmlns:f="http://xmlns.jcp.org/jsf/core">
+<f:view>
+<h:head>
+    <title>Area Check App - Start</title>
+    <meta charset="UTF-8" />
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 600px;
+            width: 90%;
+        }
+        .header {
+            margin-bottom: 30px;
+        }
+        .info {
+            background: #e7f3ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }
+        .clock {
+            font-size: 24px;
+            color: #34495e;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+        }
+        .link-button {
+            display: inline-block;
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 18px;
+            margin-top: 20px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .link-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+    </style>
+    
+    <script>
+        function updateClock() {
+            var now = new Date();
+            var dateTime = now.toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('clock').textContent = 'Текущее время: ' + dateTime;
+        }
+        
+        // Обновляем время каждые 9 секунд
+        setInterval(updateClock, 9000);
+        // Инициализируем сразу
+        updateClock();
+    </script>
+</h:head>
+<h:body>
+    <div class="container">
+        <div class="header">
+            <h1>Лабораторная работа №2</h1>
+            <h2>Проверка попадания точки в область</h2>
+        </div>
+        
+        <div class="info">
+            <p><strong>ФИО:</strong> Карандашева Анастасия Денисовна</p>
+            <p><strong>Группа:</strong> P3332</p>
+            <p><strong>Вариант:</strong> 368278</p>
+        </div>
+        
+        <div class="clock">
+            <span id="clock">Текущее время: загрузка...</span>
+        </div>
+        
+        <h:form>
+            <h:commandLink value="Перейти к приложению" action="main" styleClass="link-button" />
+        </h:form>
+    </div>
+</h:body>
+</f:view>
+</html>

@@ -1,0 +1,126 @@
+/* .results-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    background: white;
+}
+
+.results-table th {
+    background: #34495e;
+    color: white;
+    padding: 15px;
+    text-align: left;
+    font-weight: 500;
+}
+
+.results-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.hit-row {
+    background: #d4edda;
+    border-left: 4px solid #28a745;
+}
+
+.miss-row {
+    background: #f8d7da;
+    border-left: 4px solid #dc3545;
+}
+
+.hit-row:hover, .miss-row:hover {
+    background: #e9ecef;
+    transform: translateX(5px);
+    transition: all 0.3s;
+} */
+
+
+/* Основная таблица результатов */
+.results-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 25px 0;
+    box-shadow: 0 1px 10px rgba(0,0,0,0.1);
+    background: white;
+}
+
+/* Селекторы дочерних элементов для таблицы */
+.results-table > thead > tr {
+    background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+}
+
+.results-table > tbody > tr {
+    transition: background-color 0.3s ease;
+}
+
+/* Селекторы псевдоклассов для строк таблицы */
+.results-table > tbody > tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+.results-table > tbody > tr:nth-child(odd) {
+    background-color: #ffffff;
+}
+
+.results-table > tbody > tr:hover {
+    background-color: #e3f2fd !important;
+    transform: scale(1.01);
+    transition: all 0.2s ease;
+}
+
+.results-table th,
+.results-table td {
+    padding: 15px 12px;
+    text-align: center;
+    border: 1px solid #dee2e6;
+    font-size: 14px;
+}
+
+.results-table th {
+    color: white;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+/* Стили для попаданий/промахов с псевдоклассами */
+.hit-row {
+    background-color: #d4edda !important;
+}
+
+.hit-row:hover {
+    background-color: #c3e6cb !important;
+}
+
+.miss-row {
+    background-color: #f8d7da !important;
+}
+
+.miss-row:hover {
+    background-color: #f1b0b7 !important;
+}
+
+/* Стили для информационных блоков */
+.info {
+    background: #e7f3ff;
+    padding: 20px;
+    border-radius: 6px;
+    margin: 20px 0;
+    border-left: 4px solid #007bff;
+}
+
+.info p {
+    margin: 8px 0;
+    padding: 2px 0;
+}
+
+.loading {
+    text-align: center;
+    padding: 25px;
+    color: #007bff;
+    font-style: italic;
+    font-size: 16px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    margin: 15px 0;
+}

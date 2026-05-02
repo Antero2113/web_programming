@@ -1,0 +1,5 @@
+com/example/webapp/bean/ResultsBean.class
+com/example/webapp/bean/PointBean.class
+com/example/webapp/entity/PointResult.class
+com/example/webapp/service/PointService.class
+com/example/webapp/util/AreaChecker.class
